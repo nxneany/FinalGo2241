@@ -29,6 +29,8 @@ func UserController(router *gin.Engine) {
 
 	// เส้นทางใหม่สำหรับ login
 	router.POST("/customer/login", loginUser)
+	router.GET("/showPD", searchProducts)
+
 }
 
 // ฟังก์ชันดึงข้อมูลผู้ใช้ทั้งหมด
@@ -251,5 +253,42 @@ func changePassword(c *gin.Context) {
 			"CreatedAt":   user.CreatedAt,
 			"UpdatedAt":   user.UpdatedAt,
 		},
+	})
+}
+func searchProducts(c *gin.Context) {
+	var input struct {
+		Description string  `json:"description"` // รายละเอียดสินค้า
+		MinPrice    float64 `json:"min_price"`   // ราคาต่ำสุด
+		MaxPrice    float64 `json:"max_price"`   // ราคาสูงสุด
+	}
+
+	// รับข้อมูลจาก request
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	var products []model.Product
+	// ค้นหาข้อมูลจากฐานข้อมูล
+	query := DB.Model(&model.Product{})
+	if input.Description != "" {
+		query = query.Where("description LIKE ?", "%"+input.Description+"%")
+	}
+	if input.MinPrice > 0 {
+		query = query.Where("price >= ?", input.MinPrice)
+	}
+	if input.MaxPrice > 0 {
+		query = query.Where("price <= ?", input.MaxPrice)
+	}
+
+	// ดึงข้อมูลสินค้าที่ตรงตามเงื่อนไข
+	if err := query.Find(&products).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// ส่งผลลัพธ์กลับไป
+	c.JSON(http.StatusOK, gin.H{
+		"products": products,
 	})
 }
