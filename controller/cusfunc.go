@@ -23,6 +23,8 @@ func UserController(router *gin.Engine) {
 	{
 		routers.GET("/get", getUsers)
 		routers.POST("/register", registerUser)
+		routers.PUT("/update-address", updateAddress)
+		routers.PUT("/change-password", changePassword)
 	}
 
 	// เส้นทางใหม่สำหรับ login
@@ -136,4 +138,118 @@ func loginUser(c *gin.Context) {
 		"UpdatedAt":   user.UpdatedAt.Format(time.RFC3339),
 	})
 
+}
+
+// ฟังก์ชันอัปเดตที่อยู่ โดยใช้ CustomerID
+func updateAddress(c *gin.Context) {
+	var input struct {
+		CustomerID uint   `json:"customer_id"` // ใช้ CustomerID แทน Email
+		Address    string `json:"address"`
+	}
+
+	// รับข้อมูลจาก Request Body
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// ค้นหาผู้ใช้จากฐานข้อมูลโดยใช้ CustomerID
+	var user model.Customer
+	if err := DB.Where("customer_id = ?", input.CustomerID).First(&user).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "User not found"})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		}
+		return
+	}
+
+	// อัปเดตที่อยู่
+	user.Address = input.Address
+	user.UpdatedAt = time.Now()
+
+	// บันทึกการอัปเดตลงในฐานข้อมูล
+	if err := DB.Save(&user).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update address"})
+		return
+	}
+
+	// ส่งข้อมูลที่อัปเดตกลับไป
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Address updated successfully",
+		"data": gin.H{
+			"CustomerID":  user.CustomerID,
+			"FirstName":   user.FirstName,
+			"LastName":    user.LastName,
+			"Email":       user.Email,
+			"PhoneNumber": user.PhoneNumber,
+			"Address":     user.Address,
+			"CreatedAt":   user.CreatedAt,
+			"UpdatedAt":   user.UpdatedAt,
+		},
+	})
+}
+
+// ฟังก์ชันเปลี่ยนรหัสผ่าน
+func changePassword(c *gin.Context) {
+	var input struct {
+		CustomerID  uint   `json:"customer_id"`  // CustomerID ของผู้ใช้
+		OldPassword string `json:"old_password"` // รหัสผ่านเก่า
+		NewPassword string `json:"new_password"` // รหัสผ่านใหม่
+	}
+
+	// รับข้อมูลจาก Request Body
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// ค้นหาผู้ใช้จากฐานข้อมูลโดยใช้ CustomerID
+	var user model.Customer
+	if err := DB.Where("customer_id = ?", input.CustomerID).First(&user).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "User not found"})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		}
+		return
+	}
+
+	// ตรวจสอบรหัสผ่านเก่ากับฐานข้อมูล
+	if !checkPasswordHash(input.OldPassword, user.Password) {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Old password is incorrect"})
+		return
+	}
+
+	// แฮชรหัสผ่านใหม่ก่อนบันทึก
+	hashedPassword, err := hashPassword(input.NewPassword)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash new password"})
+		return
+	}
+
+	// อัปเดตรหัสผ่านใหม่ในฐานข้อมูล
+	user.Password = hashedPassword
+	user.UpdatedAt = time.Now()
+
+	// บันทึกการเปลี่ยนแปลงลงในฐานข้อมูล
+	if err := DB.Save(&user).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to change password"})
+		return
+	}
+
+	// ส่งข้อมูลที่อัปเดตกลับไป
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Password updated successfully",
+		"data": gin.H{
+			"CustomerID":  user.CustomerID,
+			"FirstName":   user.FirstName,
+			"LastName":    user.LastName,
+			"Email":       user.Email,
+			"PhoneNumber": user.PhoneNumber,
+			"Address":     user.Address,
+			"CreatedAt":   user.CreatedAt,
+			"UpdatedAt":   user.UpdatedAt,
+		},
+	})
 }
