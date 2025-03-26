@@ -30,6 +30,7 @@ func UserController(router *gin.Engine) {
 	// เส้นทางใหม่สำหรับ login
 	router.POST("/customer/login", loginUser)
 	router.GET("/showPD", searchProducts)
+	router.POST("/cart/add-item", addItemToCart)
 
 }
 
@@ -290,5 +291,63 @@ func searchProducts(c *gin.Context) {
 	// ส่งผลลัพธ์กลับไป
 	c.JSON(http.StatusOK, gin.H{
 		"products": products,
+	})
+}
+func addItemToCart(c *gin.Context) {
+	var input struct {
+		CustomerID int    `json:"customer_id"`
+		CartName   string `json:"cart_name"`
+		ProductID  int    `json:"product_id"`
+		Quantity   int    `json:"quantity"`
+	}
+
+	// รับข้อมูลจาก request
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	var cart model.Cart
+	// ค้นหารถเข็นตามชื่อที่ลูกค้ากำหนด
+	if err := DB.Where("customer_id = ? AND cart_name = ?", input.CustomerID, input.CartName).First(&cart).Error; err != nil {
+		// ถ้าไม่พบรถเข็น ให้สร้างใหม่
+		cart = model.Cart{
+			CustomerID: input.CustomerID,
+			CartName:   input.CartName,
+		}
+		if err := DB.Create(&cart).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Cannot create cart"})
+			return
+		}
+	}
+
+	var cartItem model.CartItem
+	// ค้นหาว่ามีสินค้านี้อยู่ในรถเข็นแล้วหรือไม่
+	if err := DB.Where("cart_id = ? AND product_id = ?", cart.CartID, input.ProductID).First(&cartItem).Error; err == nil {
+		// ถ้ามีอยู่แล้วให้เพิ่มจำนวนสินค้า
+		cartItem.Quantity += input.Quantity
+		if err := DB.Save(&cartItem).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Cannot update cart item"})
+			return
+		}
+	} else {
+		// ถ้ายังไม่มี ให้สร้างรายการสินค้าใหม่ในรถเข็น
+		cartItem = model.CartItem{
+			CartID:    cart.CartID,
+			ProductID: input.ProductID,
+			Quantity:  input.Quantity,
+		}
+		if err := DB.Create(&cartItem).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Cannot add item to cart"})
+			return
+		}
+	}
+
+	// ส่ง response กลับ
+	c.JSON(http.StatusOK, gin.H{
+		"message":    "Item added to cart successfully",
+		"cart_id":    cart.CartID,
+		"product_id": input.ProductID,
+		"quantity":   cartItem.Quantity,
 	})
 }
