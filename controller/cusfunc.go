@@ -31,6 +31,7 @@ func UserController(router *gin.Engine) {
 	router.POST("/customer/login", loginUser)
 	router.GET("/showPD", searchProducts)
 	router.POST("/cart/add-item", addItemToCart)
+	router.GET("cart/showall/:customer_id", getAllCarts)
 
 }
 
@@ -350,4 +351,45 @@ func addItemToCart(c *gin.Context) {
 		"product_id": input.ProductID,
 		"quantity":   cartItem.Quantity,
 	})
+}
+func getAllCarts(c *gin.Context) {
+	customerID := c.Param("customer_id") // รับค่า customer_id จาก URL
+
+	var carts []model.Cart
+	// ค้นหารถเข็นทั้งหมดของลูกค้า
+	if err := DB.Where("customer_id = ?", customerID).Find(&carts).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Cannot retrieve carts"})
+		return
+	}
+
+	var result []gin.H
+	for _, cart := range carts {
+		var cartItems []struct {
+			ProductID   int    `json:"product_id"`
+			ProductName string `json:"product_name"`
+			Quantity    int    `json:"quantity"`
+			Price       string `json:"price"`
+		}
+
+		// ดึงข้อมูลสินค้าในรถเข็น
+		query := `
+            SELECT p.product_id, p.product_name, ci.quantity, p.price
+            FROM cart_item ci
+            JOIN product p ON ci.product_id = p.product_id
+            WHERE ci.cart_id = ?
+        `
+		if err := DB.Raw(query, cart.CartID).Scan(&cartItems).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Cannot retrieve cart items"})
+			return
+		}
+
+		// เพิ่มข้อมูลลงใน JSON response
+		result = append(result, gin.H{
+			"cart_id":   cart.CartID,
+			"cart_name": cart.CartName,
+			"items":     cartItems,
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{"carts": result})
 }
