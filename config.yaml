@@ -1,0 +1,2 @@
+mysql:
+  dsn: "cp_65011212241:65011212241@csmsu@tcp(202.28.34.197:3306)/cp_65011212241?charset=utf8mb4&parseTime=True&loc=Asia%2FBangkok"
